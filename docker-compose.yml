@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: uk_economic_pulse_db
+    environment:
+      POSTGRES_DB: economic_pulse
+      POSTGRES_USER: pulse_user
+      POSTGRES_PASSWORD: pulse_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
