@@ -17,7 +17,14 @@ def main():
     run_file("sql/02_staging.sql")
 
     # 2) fetch BoE series and upsert
-    SERIES = ["IUMABEDR", "IUMAMNPY", "XUMAGBD", "XUMAGPS"]
+    SERIES = ["IUMABEDR", "IUMAMNPY", "XUMAGBD"]
+
+    df = fetch_boe_series(
+    ["IUMABEDR", "IUMBV34", "IUMBV37", "IUMBV42", "IUMBV45"],
+    date_from="01/Jan/1990",
+    date_to="now",
+)
+
     n = upsert_observations(df)
     print(f"✅ Upserted {n} observations into fact_observation")
 

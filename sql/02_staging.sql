@@ -29,3 +29,20 @@ SET series_name = EXCLUDED.series_name,
     unit        = EXCLUDED.unit,
     frequency   = EXCLUDED.frequency,
     notes       = EXCLUDED.notes;
+
+INSERT INTO dim_series (series_id, series_name, source, unit, frequency, notes)
+VALUES
+('IUMABEDR', 'Monthly average of official Bank Rate', 'BoE', 'Percent', 'Monthly', NULL),
+('IUMAMNPY', '10Y nominal par yield (monthly avg)', 'BoE', 'Percent', 'Monthly', NULL),
+('XUMAGBD',  'GBP/USD exchange rate (monthly avg)', 'BoE', 'USD per GBP', 'Monthly', NULL)
+ON CONFLICT (series_id) DO NOTHING;
+
+INSERT INTO dim_series (series_id, series_name, source, unit, frequency)
+VALUES
+('IUMABEDR','Monthly average of official Bank Rate','BoE','Percent','Monthly'),
+('IUMBV34','(set later)','BoE','Percent','Monthly'),
+('IUMBV37','(set later)','BoE','Percent','Monthly'),
+('IUMBV42','(set later)','BoE','Percent','Monthly'),
+('IUMBV45','(set later)','BoE','Percent','Monthly')
+ON CONFLICT (series_id) DO NOTHING;
+

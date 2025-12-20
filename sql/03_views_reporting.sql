@@ -50,3 +50,11 @@ SELECT
   MAX(date_id) AS latest_observation_date
 FROM fact_observation
 GROUP BY series_id;
+
+CREATE OR REPLACE VIEW vw_data_freshness AS
+SELECT
+  series_id,
+  MAX(fetched_at) AS last_fetched_at,
+  MAX(date_id) AS latest_observation_date
+FROM fact_observation
+GROUP BY series_id;

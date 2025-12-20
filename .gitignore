@@ -21,12 +21,16 @@ data/
 *.parquet
 *.json
 *.log
+data/raw/
+data/processed/
+
 
 # ---- OS / Editor ----
 .DS_Store
 Thumbs.db
 .vscode/
 !.vscode/extensions.json
+.idea/
 
 # ---- Power BI / Office ----
 *.pbix
