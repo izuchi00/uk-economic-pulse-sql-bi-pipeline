@@ -35,7 +35,7 @@ def main() -> None:
         raise SystemExit("❌ Validation failed: no data loaded.")
 
     # Optional freshness check (don’t be too strict for monthly series)
-    # Fail only if older than ~120 days (you can tune it)
+    # Fail only if older than ~120 days
     if isinstance(latest_date, date):
         if latest_date < (date.today() - timedelta(days=120)):
             raise SystemExit(f"❌ Validation failed: data too old (latest_date={latest_date}).")
