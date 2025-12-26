@@ -12,18 +12,18 @@ from data.ingest.load_postgres import upsert_observations
 load_dotenv()
 
 
-def main():
-    # 1) ensure dim_series exists / is updated
+def main() -> None:
+    # 1) ensure dim tables exist / updated
     run_file("sql/02_staging.sql")
 
-    # 2) fetch BoE series and upsert
-    SERIES = ["IUMABEDR", "IUMAMNPY", "XUMAGBD"]
+    # 2) fetch + upsert
+    SERIES = ["IUMABEDR"]  # keep this clean until other codes are verified
 
     df = fetch_boe_series(
-    ["IUMABEDR", "IUMBV34", "IUMBV37", "IUMBV42", "IUMBV45"],
-    date_from="01/Jan/1990",
-    date_to="now",
-)
+        SERIES,
+        date_from="01/Jan/1990",
+        date_to="now",
+    )
 
     n = upsert_observations(df)
     print(f"✅ Upserted {n} observations into fact_observation")
@@ -31,7 +31,7 @@ def main():
     # 3) create/update views
     run_file("sql/03_views_reporting.sql")
 
-    # 4) sanity check: latest value
+    # 4) sanity check
     engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
     with engine.begin() as conn:
         row = conn.execute(
@@ -41,6 +41,7 @@ def main():
                 WHERE series_id = 'IUMABEDR'
             """)
         ).fetchone()
+
     print("Latest:", row)
 
 

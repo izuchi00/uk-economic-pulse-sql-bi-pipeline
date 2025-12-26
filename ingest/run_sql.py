@@ -1,18 +1,27 @@
+# ingest/run_sql.py
+from __future__ import annotations
+
 import os
 from pathlib import Path
-from sqlalchemy import create_engine, text
+
 from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
 
 load_dotenv()
 
-engine = create_engine(os.environ["DATABASE_URL"])
 
-def run_file(path: str):
-    sql = Path(path).read_text(encoding="utf-8")
+def run_file(path: str) -> None:
+    """
+    Run a .sql file against DATABASE_URL.
+    """
+    db_url = os.environ["DATABASE_URL"]
+    engine = create_engine(db_url, pool_pre_ping=True)
+
+    sql_path = Path(path)
+    sql_text = sql_path.read_text(encoding="utf-8")
+
+    # Run the whole script
     with engine.begin() as conn:
-        for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
-            conn.execute(text(stmt))
-    print(f"✅ Ran {path}")
+        conn.execute(text(sql_text))
 
-if __name__ == "__main__":
-    run_file("sql/02_staging.sql")
+    print(f"✅ Ran {path}")
