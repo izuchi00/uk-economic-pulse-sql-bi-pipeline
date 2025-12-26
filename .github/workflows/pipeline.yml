@@ -23,7 +23,7 @@ jobs:
       PGPASSWORD: ${{ secrets.PGPASSWORD }}
 
       # If you also use a single connection string, add it as well (optional)
-      # DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     steps:
       - name: Checkout repo
