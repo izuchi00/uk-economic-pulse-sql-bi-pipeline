@@ -1,44 +1,88 @@
-﻿# data/ingest/fetch_boe.py
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import io
 import time
-from typing import List, Tuple
+from typing import List, Optional
 
 import pandas as pd
 import requests
 
-
 BOE_ENDPOINTS = [
+    # These are “query endpoints”. Visiting directly in a browser (without params) can show an error.
     "https://www.bankofengland.co.uk/boeapps/database/_iadb-fromshowcolumns.asp",
     "https://www.bankofengland.co.uk/boeapps/iadb/fromshowcolumns.asp",
 ]
 
 
-def _download_text(url: str, params: dict) -> str:
+def _download_text(session: requests.Session, url: str, params: dict) -> str:
     headers = {
-        "User-Agent": "uk-economic-pulse/1.0 (+powerbi; contact: you)",
+        "User-Agent": "uk-economic-pulse/1.0 (+data-pipeline)",
         "Accept": "text/csv,text/plain,*/*",
         "Referer": "https://www.bankofengland.co.uk/",
+        "Accept-Language": "en-GB,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
     }
-    r = requests.get(url, params=params, headers=headers, timeout=60, allow_redirects=True)
+    r = session.get(url, params=params, headers=headers, timeout=60, allow_redirects=True)
     r.raise_for_status()
     return r.text
 
 
 def _is_html(text: str) -> bool:
     t = (text or "").lstrip().lower()
-    return t.startswith("<!doctype") or t.startswith("<html") or "<html" in t[:2000]
+    # quick checks
+    return (
+        t.startswith("<!doctype")
+        or t.startswith("<html")
+        or "<html" in t[:2000]
+        or "<head" in t[:2000]
+    )
+
+
+def _slice_to_csv_table(csv_text: str) -> str:
+    """
+    BoE sometimes returns:
+      - a normal CSV with header DATE,SERIES,VALUE
+      - CSV with a few leading lines (notes) before the header
+      - CSV with inconsistent parsing if we start too early
+
+    This function finds the first line that looks like the real table header,
+    otherwise falls back to the first line that looks like 3 columns.
+    """
+    if not csv_text:
+        return ""
+
+    lines = [ln.strip("\ufeff").rstrip() for ln in csv_text.splitlines() if ln.strip()]
+    if not lines:
+        return ""
+
+    # Preferred: find header line containing DATE and SERIES and VALUE
+    for i, ln in enumerate(lines[:200]):  # search early section only
+        u = ln.upper().replace(" ", "")
+        if "DATE" in u and "SERIES" in u and "VALUE" in u and ("," in ln):
+            return "\n".join(lines[i:])
+
+    # Fallback: first line that looks like 3+ comma-separated fields
+    for i, ln in enumerate(lines[:200]):
+        if ln.count(",") >= 2:
+            return "\n".join(lines[i:])
+
+    # Worst case: return original
+    return "\n".join(lines)
 
 
 def _parse_boe_csv(csv_text: str) -> pd.DataFrame:
     """
-    Returns df with columns: series_id, date_id, value, release_date
+    Returns df with columns:
+      series_id, date_id, value, release_date
     """
-    # Some BoE responses include header row: DATE,SERIES,VALUE
-    # Some have weird leading lines. We'll read flexibly.
-    buf = io.StringIO(csv_text)
+    sliced = _slice_to_csv_table(csv_text)
+    if not sliced:
+        return pd.DataFrame(columns=["series_id", "date_id", "value", "release_date"])
 
+    buf = io.StringIO(sliced)
+
+    # Read flexibly
     df = pd.read_csv(
         buf,
         sep=",",
@@ -46,27 +90,29 @@ def _parse_boe_csv(csv_text: str) -> pd.DataFrame:
         on_bad_lines="skip",
     )
 
-    # Try to standardise columns
-    cols = [c.strip().upper() for c in df.columns]
-    df.columns = cols
+    # Standardize column names
+    df.columns = [str(c).strip().upper() for c in df.columns]
 
-    # If it came without headers, it may be 3 unnamed cols
-    if set(["DATE", "SERIES", "VALUE"]).issubset(set(df.columns)):
+    # Identify columns
+    if {"DATE", "SERIES", "VALUE"}.issubset(df.columns):
         date_col, series_col, value_col = "DATE", "SERIES", "VALUE"
     elif df.shape[1] >= 3:
-        # fallback: first 3 cols
         df = df.iloc[:, :3].copy()
         df.columns = ["DATE", "SERIES", "VALUE"]
         date_col, series_col, value_col = "DATE", "SERIES", "VALUE"
     else:
-        raise ValueError(f"Unexpected BoE CSV shape: {df.shape}")
+        raise ValueError(f"Unexpected BoE CSV shape after slicing: {df.shape}")
 
-    # Clean + parse
+    # Clean
     df[series_col] = df[series_col].astype(str).str.strip()
+
     raw_dates = df[date_col].astype(str).str.strip()
 
-    # Handles both "31 Jan 1990" and "31/Jan/1990" etc.
-    dt = pd.to_datetime(raw_dates, dayfirst=True, errors="coerce", utc=False)
+    # BoE commonly uses: "31 Jan 1990"
+    # We try a format first, then fall back to general parsing.
+    dt = pd.to_datetime(raw_dates, format="%d %b %Y", errors="coerce")
+    if dt.isna().all():
+        dt = pd.to_datetime(raw_dates, dayfirst=True, errors="coerce")
 
     values = (
         df[value_col]
@@ -93,12 +139,15 @@ def fetch_boe_series(
     series_codes: List[str],
     date_from: str = "01/Jan/1990",
     date_to: str = "now",
-    sleep_between: float = 0.4,
+    retries_per_endpoint: int = 2,
+    sleep_between: float = 0.6,
 ) -> pd.DataFrame:
     """
     Fetch BoE series in ONE request (BoE supports multiple SeriesCodes).
     Returns dataframe: series_id, date_id, value, release_date.
-    Raises if BoE returns HTML or nothing parseable.
+
+    Raises RuntimeError if BoE returns HTML for all attempts/endpoints.
+    Returns empty df if CSV is valid but contains no rows.
     """
     params = {
         "csv.x": "yes",
@@ -110,22 +159,32 @@ def fetch_boe_series(
         "VPD": "Y",
     }
 
-    last_err: Exception | None = None
-    text_payload: str | None = None
+    last_err: Optional[Exception] = None
 
-    for ep in BOE_ENDPOINTS:
-        try:
-            time.sleep(sleep_between)
-            text_payload = _download_text(ep, params)
-            if _is_html(text_payload):
-                raise RuntimeError("BoE returned HTML (access denied / blocked / invalid code / redirected).")
-            break
-        except Exception as e:
-            last_err = e
-            text_payload = None
+    with requests.Session() as session:
+        for ep in BOE_ENDPOINTS:
+            for attempt in range(retries_per_endpoint + 1):
+                try:
+                    if attempt > 0:
+                        # simple backoff
+                        time.sleep(sleep_between * (attempt + 1))
+                    else:
+                        time.sleep(sleep_between)
 
-    if text_payload is None:
-        raise RuntimeError(f"Failed to download BoE CSV. Last error: {last_err}")
+                    payload = _download_text(session, ep, params)
 
-    df = _parse_boe_csv(text_payload)
-    return df
+                    if _is_html(payload):
+                        # include a small preview to help debug redirects/blocks
+                        preview = (payload or "")[:200].replace("\n", " ")
+                        raise RuntimeError(
+                            f"BoE returned HTML (blocked/redirected/invalid request). Preview: {preview}"
+                        )
+
+                    df = _parse_boe_csv(payload)
+                    return df
+
+                except Exception as e:
+                    last_err = e
+                    continue
+
+    raise RuntimeError(f"Failed to download BoE CSV from all endpoints. Last error: {last_err}")

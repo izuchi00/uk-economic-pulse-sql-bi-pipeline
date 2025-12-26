@@ -3,26 +3,13 @@ name: UK Economic Pulse Pipeline
 on:
   workflow_dispatch:
   schedule:
-    # Runs daily at 06:10 UTC (change if you want)
-    - cron: "10 6 * * *"
+    - cron: "10 6 * * *"  # daily 06:10 UTC
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
-
     env:
-      # Make sure Python can import your local packages/folders
       PYTHONPATH: ${{ github.workspace }}
-
-      # ---- Database (Supabase Postgres) ----
-      # Use the SAME names your Python code reads from os.environ
-      PGHOST: ${{ secrets.PGHOST }}
-      PGPORT: ${{ secrets.PGPORT }}
-      PGDATABASE: ${{ secrets.PGDATABASE }}
-      PGUSER: ${{ secrets.PGUSER }}
-      PGPASSWORD: ${{ secrets.PGPASSWORD }}
-
-      # If you also use a single connection string, add it as well (optional)
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     steps:
@@ -39,13 +26,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run ingestion pipeline
-        run: |
-          python ingest/run_pipeline.py
-
-      - name: Apply SQL (schema/staging/views/checks)
+      - name: Apply schema (safe to re-run)
         run: |
           python ingest/run_sql.py sql/01_schema.sql
-          python ingest/run_sql.py sql/02_staging.sql
-          python ingest/run_sql.py sql/03_views_reporting.sql
+
+      - name: Run ingestion pipeline
+        run: |
+          python -m ingest.run_pipeline
+
+      - name: Run quality checks
+        run: |
           python ingest/run_sql.py sql/04_quality_checks.sql

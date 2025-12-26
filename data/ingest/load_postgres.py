@@ -1,10 +1,8 @@
-# data/ingest/load_postgres.py
 from __future__ import annotations
 
 import os
 import pandas as pd
 from dotenv import load_dotenv
-
 from sqlalchemy import create_engine, text, bindparam
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.types import Date
@@ -32,7 +30,7 @@ def upsert_observations(df: pd.DataFrame) -> int:
     df["series_id"] = df["series_id"].astype(str).str.strip()
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
 
-    # ✅ ensure Python date types (important for ARRAY(Date))
+    # Ensure Python date types
     df["date_id"] = pd.to_datetime(df["date_id"], errors="coerce").dt.date
     df["release_date"] = pd.to_datetime(df["release_date"], errors="coerce").dt.date
     df["release_date"] = df["release_date"].apply(lambda x: None if pd.isna(x) else x)
@@ -40,11 +38,10 @@ def upsert_observations(df: pd.DataFrame) -> int:
     df = df.dropna(subset=["series_id", "date_id", "value"])
 
     engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
-
     rows = df.to_dict(orient="records")
 
     with engine.begin() as conn:
-        # ✅ Upsert dates into dim_date
+        # Upsert dates
         unique_dates = sorted({r["date_id"] for r in rows if r.get("date_id") is not None})
         if unique_dates:
             stmt_dates = text("""
@@ -55,7 +52,6 @@ def upsert_observations(df: pd.DataFrame) -> int:
             """).bindparams(
                 bindparam("dates", type_=ARRAY(Date))
             )
-
             conn.execute(stmt_dates, {"dates": unique_dates})
 
         # Upsert observations
