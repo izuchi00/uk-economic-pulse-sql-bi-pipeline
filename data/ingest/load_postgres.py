@@ -35,6 +35,7 @@ def upsert_observations(df: pd.DataFrame) -> int:
     # ✅ ensure Python date types (important for ARRAY(Date))
     df["date_id"] = pd.to_datetime(df["date_id"], errors="coerce").dt.date
     df["release_date"] = pd.to_datetime(df["release_date"], errors="coerce").dt.date
+    df["release_date"] = df["release_date"].apply(lambda x: None if pd.isna(x) else x)
 
     df = df.dropna(subset=["series_id", "date_id", "value"])
 
