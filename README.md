@@ -54,5 +54,10 @@ Create a `.env` file (or set GitHub secrets) with:
 
 If the upstream BoE endpoint temporarily blocks requests, the pipeline may ingest 0 new rows but the existing warehouse + dashboard remain usable.
 
+## Dashboard (Power BI)
+
+![UK Bank Rate Dashboard](assets/dashboard-all.png)
+![UK Bank Rate Dashboard](assets/dashboard-year.png)
+
 ```
 
